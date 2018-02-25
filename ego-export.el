@@ -796,6 +796,17 @@ PUB-BASE-DIR is the root publication directory."
       )
     (format "ego-link:%s" org-file)))
 
+(ignore-errors                            ;make EGO compatible with org-mode 8.x
+  (org-link-set-parameters "ego-link"     ;function used by org-mode 9.x
+                         :follow 'org-open-file
+                         :export (lambda (path desc format)
+                                   (cond
+                                    ((eq format 'html) (ego-link-type-process-html path desc))
+                                    ((eq format 'latex) "This ego-link haven't been implementted")))
+                         :complete 'org-ego-link-complete-link
+                         )
+ )
+
 (provide 'ego-export)
 
 ;;; ego-export.el ends here
