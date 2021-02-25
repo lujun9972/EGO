@@ -132,7 +132,7 @@ render from a default hash table."
                (mapcar
                 (lambda (cat)
                   (ht ("category-uri"
-                       (concat "/" (ego--encode-string-to-url cat) "/"))
+                       (concat "/" (ego--encode-string-to-url cat) "/")) ;TODO add index.html??
                       ("category-name" (capitalize cat))))
                 (ego-get-category-show-list)))
               ("nav-summary"
@@ -140,22 +140,22 @@ render from a default hash table."
                 (lambda (cat)
                   (if (equal cat (caar (-filter (lambda (element) (equal :tags (cadr element)))
                                                 (ego--get-config-option :summary))))
-                      (setq cat-real "tags")
+                      (setq cat-real "tags") ;为什么要强制改成tags目录?
                     (setq cat-real cat))
                   (ht ("summary-item-uri"
-                       (concat "/" (ego--encode-string-to-url cat-real) "/"))
+                       (concat "/" (ego--encode-string-to-url cat-real) "/")) ;TODO add index.html
                       ("summary-item-name" (capitalize cat))))
                 (mapcar #'car (ego--get-config-option :summary))))
               ("nav-source-browse"
                (let ((list (ego--get-config-option :source-browse-url)))
                  (when list
                    (ht ("source-browse-name" (car list))
-                       ("source-browse-uri" (car (cdr list)))))))
+                       ("source-browse-uri" (car (cdr list))))))) ;TODO add index.html
               ("nav-about"
                (let ((list (ego--get-config-option :about)))
                  (when list
                    (ht ("about-name" (car list))
-                       ("about-uri" (car (cdr list)))))))
+                       ("about-uri" (car (cdr list))))))) ;TODO add index.html
               ("nav-rss"
                (let ((list (ego--get-config-option :rss)))
                  (when list

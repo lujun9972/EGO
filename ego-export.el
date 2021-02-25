@@ -306,6 +306,7 @@ file's category is based on its name and its root folder name."
   "Publish org file opened in current buffer. COMPONENT-TABLE is the hash table
 used to render the template, PUB-PAHT is the directory for published html file or the published html file itself(with .html suffix).
 If COMPONENT-TABLE is nil, the publication will be skipped."
+  (message "EGO:DEBUG pub-path=%s" pub-path)
   (when component-table
     (let* ((uri (if (string-suffix-p ".html" pub-path)
                     pub-path
@@ -625,7 +626,7 @@ TODO: improve this function."
                                             tags-multi " : "))))))
                     (-uniq (-take
                             summary-update-number
-                            (sort (do ((k summary-alist (cdr k))
+                            (sort (cl-do ((k summary-alist (cdr k))
                                        (result-k nil (append (cdr (car k)) result-k)))
                                       ((equal k nil) result-k))
                                   (lambda (plist1 plist2)
