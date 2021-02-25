@@ -79,9 +79,11 @@ for files to be deleted. `pub-root-dir' is the root publication directory."
                                  (attr-plist (car attr-cell))
                                  (component-table (cdr attr-cell)))
                             (when need-upd-p
+                              (run-hook-with-args 'ego-pre-publish-hooks attr-plist)
                               (let ((new-html-uri (ego--publish-modified-file component-table
                                                                               (plist-get attr-plist :pub-dir))))
-                                (ego-update-org-html-mapping org-file new-html-uri 'del)))
+                                (ego-update-org-html-mapping org-file new-html-uri 'del))
+                              (run-hook-with-args 'ego-post-publish-hooks attr-plist))
                             attr-plist)))
                       files-list)))
       (unless (member
@@ -100,6 +102,13 @@ for files to be deleted. `pub-root-dir' is the root publication directory."
        (lambda (name)
            (ego--update-summary file-attr-list pub-root-dir name))
        (mapcar #'car (ego--get-config-option :summary))))))
+
+(defun ego--generate-description ()
+  "Generate description of current org file buffer."
+  (save-excursion
+    (goto-char (point-min))
+    (search-forward-regexp "^[^#]" nil t)
+    (buffer-substring-no-properties (point) (point-max))))
 
 (defun ego--get-org-file-options (org-file pub-root-dir do-pub)
   "Retrieve all needed options for org file opened in current buffer.
@@ -129,6 +138,7 @@ This functions works with `ego-current-project-name' and currect buffer.
                               "%Y-%m-%d"
                               (nth 5 (file-attributes filename))))))
              (description (or (ego--read-org-option "DESCRIPTION")
+                              (ego--generate-description)
                               "No Description"))
              (thumb (ego--read-org-option "THUMBNAIL"))
              (tags (ego--read-org-option "TAGS"))
@@ -153,20 +163,21 @@ This functions works with `ego-current-project-name' and currect buffer.
                         (replace-regexp-in-string
                          "\\`/" ""
                          uri))))
-             (attr-plist `(:title ,title
-                                  :date ,date
-                                  :mod-date ,mod-date
-                                  :description ,description
-                                  :thumb ,thumb
-                                  :year ,year
-                                  :tags ,tags
-                                  :authors ,authors
-                                  :category ,category
-                                  ;; ADD index.html for uri if uri is a directory
-                                  :uri ,(if (string-suffix-p ".html" uri)
-                                           uri
-                                         (concat (file-name-as-directory uri) "index.html"))
-                                  :pub-dir ,pub-dir))
+             (attr-plist `(:source-file ,(expand-file-name org-file)
+                                        :title ,title
+                                        :date ,date
+                                        :mod-date ,mod-date
+                                        :description ,description
+                                        :thumb ,thumb
+                                        :year ,year
+                                        :tags ,tags
+                                        :authors ,authors
+                                        :category ,category
+                                        ;; ADD index.html for uri if uri is a directory
+                                        :uri ,(if (string-suffix-p ".html" uri)
+                                                  uri
+                                                (concat (file-name-as-directory uri) "index.html"))
+                                        :pub-dir ,pub-dir))
              component-table)
         (when do-pub
           (princ attr-plist)
