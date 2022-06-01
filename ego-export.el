@@ -828,9 +828,10 @@ PUB-BASE-DIR is the root publication directory."
                          :complete 'org-ego-link-complete-link
                          )
 
-  (defun org-link--export-help (path desc backend _)
+  (defun org-link--export-help (path desc backend &optional _)
     "Export a \"help\" type link.
   PATH is a symbol name, as a string."
+    (message "%s,%s,%s,%s" path desc backend _)
     (let ((info (pcase (intern path)
                   ((and (pred fboundp) function) (describe-function function))
                   ((and (pred boundp) variable) (describe-variable variable))
