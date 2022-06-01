@@ -831,7 +831,6 @@ PUB-BASE-DIR is the root publication directory."
   (defun org-link--export-help (path desc backend &optional _)
     "Export a \"help\" type link.
   PATH is a symbol name, as a string."
-    (message "%s,%s,%s,%s" path desc backend _)
     (let ((info (pcase (intern path)
                   ((and (pred fboundp) function) (describe-function function))
                   ((and (pred boundp) variable) (describe-variable variable))
@@ -839,7 +838,7 @@ PUB-BASE-DIR is the root publication directory."
       (quit-window)                       ;关闭新开的 help window
       (pcase backend
         ('html (format "<label title='%s'>%s</label>" info desc))
-        (t desc))))
+        (_ desc))))
   ;; 注册 help 的导出函数
   (org-link-set-parameters "help"
                            :export #'org-link--export-help)
