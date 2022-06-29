@@ -834,7 +834,7 @@ PUB-BASE-DIR is the root publication directory."
     (let ((info (pcase (intern path)
                   ((and (pred fboundp) function) (describe-function function))
                   ((and (pred boundp) variable) (describe-variable variable))
-                  (name (user-error "Unknown function or variable: %s" name)))))
+                  (name (format "Unknown function or variable: %s" name)))))
       (quit-window)                       ;关闭新开的 help window
       (pcase backend
         ('html (format "<label title='%s'>%s</label>" info desc))
