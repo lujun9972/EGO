@@ -1,6 +1,1 @@
-/* =========================================================
-   DarkSun Theme — Google Fonts
-   Cormorant Garamond (display/heading) + Source Sans 3 (body)
-   ========================================================= */
-
-@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=Source+Sans+3:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400;1,500&family=JetBrains+Mono:wght@400;500&display=swap');
+/* DarkSun Theme — Fonts loaded via <link> in header.mustache */
