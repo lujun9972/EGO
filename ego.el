@@ -123,7 +123,7 @@
           (ego-git-pull-remote store-dir html-branch)
           (ego--prepare-theme-resources store-dir)
           (message "EGO: Pre-publish all files needed to be publish, waiting...")
-          (ego--publish-changes repo-files addition-files changed-files store-dir)
+          (ego--publish-changes repo-files addition-files changed-files store-dir force-all)
           (message "EGO: Pre-publish finished, output directory: %s." store-dir)
           (let ((file-name-handler-alist (cons '("\\(?:\\.htm\\|\\.html\\)" . ego--copy-file-handler) file-name-handler-alist)) ; register ego--copy-file-handler to tackle relative-url-to-absolute problem
                 )

@@ -537,12 +537,25 @@ multi path."
   (expand-file-name ego-db-file-name (ego--get-config-option :store-dir)))
 
 (defun ego-get-org-html-mapping ()
-  "Return org-html-mapping-alist which stored in ego-db-file(use ego-get-db-file function to get it)."
+  "Return org-html-mapping-alist stored in ego-db-file.
+Each entry is a list: (org-path html-uri :title ... :tags ...).
+Returns nil if file is unreadable, empty, or contains old cons-cell format."
   (let* ((ego-db-file (ego-get-db-file))
          (org-html-mapping-lines (when (file-readable-p ego-db-file)
-                                   (delete "" (split-string (ego--file-to-string ego-db-file) "[\r\n]+"))))
-         (org-html-mapping-alist (mapcar #'read org-html-mapping-lines)))
-    org-html-mapping-alist))
+                                   (delete "" (split-string (ego--file-to-string ego-db-file) "[\r\n]+")))))
+    (when org-html-mapping-lines
+      (condition-case nil
+          (let ((entries (mapcar #'read org-html-mapping-lines)))
+            ;; Old format: ("path" . "uri") — cdr is a string (atom), not a list
+            ;; New format: ("path" "uri" :tags ...) — cdr is a list
+            (if (cl-some (lambda (e) (not (consp (cdr e)))) entries)
+                (progn
+                  (message "EGO: Old .ego.db format detected, will rebuild")
+                  nil)
+              entries))
+        (error
+         (message "EGO: Failed to read .ego.db, will rebuild")
+         nil)))))
 
 (defun ego-save-org-html-mapping (org-html-mapping-alist)
   "Save org-html-mapping-alist to ego-db-file(use ego-get-db-file function to get it)."
@@ -551,16 +564,25 @@ multi path."
       (let ((standard-output (current-buffer)))
         (mapc #'print org-html-mapping-alist)))))
 
-(defun ego-update-org-html-mapping (org-path html-uri &optional del)
-  "update org-path and html-uri mapping relationship stored in ego-db-file(use ego-get-db-file function to get it).
-
-If DEL is not nil, then it will delete origin-html-uri as well.
+(defun ego-update-org-html-mapping (org-path html-uri &optional del metadata)
+  "Update org-path and html-uri mapping in ego-db-file.
+METADATA is an optional plist with :title, :date, :mod-date, :tags, :category.
+If DEL is non-nil, delete origin-html-uri as well.
 Return the origin html uri of ORG-PATH."
   (let* ((org-html-mapping-alist (ego-get-org-html-mapping))
-         (origin-html-uri (assoc-default org-path org-html-mapping-alist)))
-    (if origin-html-uri
-        (setf (cdr (assoc org-path org-html-mapping-alist)) html-uri)
-      (push (cons org-path html-uri) org-html-mapping-alist))
+         (existing (assoc org-path org-html-mapping-alist))
+         (origin-html-uri (when existing (cadr existing))))
+    ;; If db was unreadable or old-format, start fresh
+    (unless org-html-mapping-alist
+      (setq org-html-mapping-alist nil))
+    (if existing
+        (setcdr existing (if metadata
+                             (cons html-uri metadata)
+                           (cdr existing)))
+      (push (if metadata
+                (cons org-path (cons html-uri metadata))
+              (list org-path html-uri))
+            org-html-mapping-alist))
     (ego-save-org-html-mapping org-html-mapping-alist)
     (when (and del
                origin-html-uri
@@ -569,17 +591,17 @@ Return the origin html uri of ORG-PATH."
     origin-html-uri))
 
 (defun ego-delete-org-html-mapping (org-path &optional del)
-  "delete org-path and html-uri mapping relationship stored in ego-db-file(use ego-get-db-file function to get it).
-
-If DEL is not nil, then it will delete origin-html-uri as well.
-Return the origin html uri of ORG-PATH"
+  "Delete org-path entry from ego-db-file.
+If DEL is non-nil, delete origin-html-uri as well.
+Return the origin html uri of ORG-PATH."
   (message "EGO DEBUG:ego-delete-org-html-mapping(%s %s)" org-path del)
   (let* ((org-html-mapping-alist (ego-get-org-html-mapping))
-         (origin-html-uri (assoc-default org-path org-html-mapping-alist)))
-    (setq org-html-mapping-alist (delete (assoc org-path org-html-mapping-alist) org-html-mapping-alist))
+         (existing (assoc org-path org-html-mapping-alist))
+         (origin-html-uri (when existing (cadr existing))))
+    (setq org-html-mapping-alist
+          (delq existing org-html-mapping-alist))
     (ego-save-org-html-mapping org-html-mapping-alist)
-    (when (and del
-               origin-html-uri)
+    (when (and del origin-html-uri)
       (message "EGO DEBUG:delete-file %s" origin-html-uri)
       (delete-file origin-html-uri))
     origin-html-uri))

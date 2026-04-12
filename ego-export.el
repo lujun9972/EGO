@@ -41,12 +41,10 @@
 (require 'url-parse)
 
 
-(defun ego--publish-changes (files-list addition-list change-plist pub-root-dir)
-  "This function is for:
-1. publish changed org files to html
-2. delete html files which are relevant to deleted org files (NOT implemented)
-3. update index pages
-4. regenerate tag pages
+(defun ego--publish-changes (files-list addition-list change-plist pub-root-dir &optional force-all)
+  "Publish changed org files and update tag pages.
+When FORCE-ALL is non-nil, do full rebuild of all tag pages.
+When FORCE-ALL is nil, attempt incremental tag update using .ego.db cache.
 `files-list' and `addition-list' contain paths of org files, `change-plist'
 contains two properties, one is :update for files to be updated, another is :delete
 for files to be deleted. `pub-root-dir' is the root publication directory."
@@ -55,53 +53,197 @@ for files to be deleted. `pub-root-dir' is the root publication directory."
                     (append (plist-get change-plist :update)
                             addition-list)))
          (del-list (plist-get change-plist :delete))
-         (files-list (delete-dups (append files-list addition-list))) ;files-list中只包含了当前仓库中所有的文件，不包含已经被删除的文件，因此需要把del-list也加入
-          file-attr-list)
-    (message "EGO DEBUG: del-list=[%s]" del-list)
-    (when del-list
-      (mapcar
-                      (lambda (org-file)
-                        (message "EGO DEBUG: org-file=[%s]" org-file)
-                        (ego--handle-deleted-file org-file)
-                        (ego-delete-org-html-mapping org-file 'del))
-                      del-list))
-    (message "EGO DEBUG: upd-list=[%s]" upd-list)
-    (when upd-list
-      (setq file-attr-list
-            (reverse (mapcar
-                      (lambda (org-file)
-                        (message "EGO DEBUG: org-file=[%s]" org-file)
-                        (let* ((need-upd-p (member org-file upd-list)))
-                          (let* ((attr-cell (ego--get-org-file-options
-                                             org-file
-                                             pub-root-dir
-                                             need-upd-p))
-                                 (attr-plist (car attr-cell))
-                                 (component-table (cdr attr-cell)))
-                            (when need-upd-p
-                              (run-hook-with-args 'ego-pre-publish-hooks attr-plist)
-                              (let ((new-html-uri (ego--publish-modified-file component-table
-                                                                              (plist-get attr-plist :pub-dir))))
-                                (ego-update-org-html-mapping org-file new-html-uri 'del))
-                              (run-hook-with-args 'ego-post-publish-hooks attr-plist))
-                            attr-plist)))
-                      files-list)))
-      (unless (member
-               (expand-file-name "index.org" repo-dir)
-               files-list)
-        (ego--generate-default-index file-attr-list pub-root-dir))
-      (when (and (ego--get-config-option :about)
-                 (not (member
-                       (expand-file-name "about.org" repo-dir)
-                       files-list)))
-        (ego--generate-default-about pub-root-dir))
-      (ego--update-category-index file-attr-list pub-root-dir)
-      (when (ego--get-config-option :rss)
-        (ego--update-rss file-attr-list pub-root-dir))
-      (mapc
-       (lambda (name)
+         (files-list (delete-dups (append files-list addition-list)))
+         file-attr-list)
+    ;; Read db BEFORE deleting entries, so we can compute affected tags
+    (let ((db-entries-snapshot (ego-get-org-html-mapping)))
+      (message "EGO DEBUG: del-list=[%s]" del-list)
+      (when del-list
+        (mapcar
+         (lambda (org-file)
+           (message "EGO DEBUG: org-file=[%s]" org-file)
+           (ego--handle-deleted-file org-file)
+           (ego-delete-org-html-mapping org-file 'del))
+         del-list))
+      (message "EGO DEBUG: upd-list=[%s]" upd-list)
+      (when upd-list
+        (cond
+         ;; Incremental path (non-force)
+         ((not force-all)
+          (let* ((db-entries db-entries-snapshot)
+                 (tag-cache (when db-entries (ego--get-tag-cache-from-db))))
+          (if (not tag-cache)
+              ;; Cache unavailable — full rebuild fallback
+              (progn
+                (message "EGO: No valid tag cache, using full summary generation")
+                (setq file-attr-list
+                      (reverse (mapcar
+                                (lambda (org-file)
+                                  (message "EGO DEBUG: org-file=[%s]" org-file)
+                                  (let* ((need-upd-p (member org-file upd-list)))
+                                    (let* ((attr-cell (ego--get-org-file-options
+                                                       org-file
+                                                       pub-root-dir
+                                                       need-upd-p))
+                                           (attr-plist (car attr-cell))
+                                           (component-table (cdr attr-cell)))
+                                      (when need-upd-p
+                                        (run-hook-with-args 'ego-pre-publish-hooks attr-plist)
+                                        (let ((new-html-uri (ego--publish-modified-file component-table
+                                                                                          (plist-get attr-plist :pub-dir))))
+                                          (ego-update-org-html-mapping org-file new-html-uri 'del
+                                                                       (list :title (plist-get attr-plist :title)
+                                                                             :date (plist-get attr-plist :date)
+                                                                             :mod-date (plist-get attr-plist :mod-date)
+                                                                             :tags (plist-get attr-plist :tags)
+                                                                             :category (plist-get attr-plist :category))))
+                                        (run-hook-with-args 'ego-post-publish-hooks attr-plist))
+                                      attr-plist)))
+                                files-list)))
+                (unless (member
+                         (expand-file-name "index.org" repo-dir)
+                         files-list)
+                  (ego--generate-default-index file-attr-list pub-root-dir))
+                (when (and (ego--get-config-option :about)
+                           (not (member
+                                 (expand-file-name "about.org" repo-dir)
+                                 files-list)))
+                  (ego--generate-default-about pub-root-dir))
+                (ego--update-category-index file-attr-list pub-root-dir)
+                (when (ego--get-config-option :rss)
+                  (ego--update-rss file-attr-list pub-root-dir))
+                (mapc
+                 (lambda (name)
+                   (ego--update-summary file-attr-list pub-root-dir name))
+                 (mapcar #'car (ego--get-config-option :summary))))
+
+            ;; Incremental path: only process changed files
+            (message "EGO: Using incremental summary generation")
+            (let (changed-attr-plists)
+              ;; Only call ego--get-org-file-options for files in upd-list
+              (mapc
+               (lambda (org-file)
+                 (message "EGO DEBUG: incremental org-file=[%s]" org-file)
+                 (let* ((attr-cell (ego--get-org-file-options
+                                    org-file
+                                    pub-root-dir
+                                    t))
+                        (attr-plist (car attr-cell))
+                        (component-table (cdr attr-cell)))
+                   (run-hook-with-args 'ego-pre-publish-hooks attr-plist)
+                   (let ((new-html-uri (ego--publish-modified-file component-table
+                                                                   (plist-get attr-plist :pub-dir))))
+                     (ego-update-org-html-mapping org-file new-html-uri 'del
+                                                  (list :title (plist-get attr-plist :title)
+                                                        :date (plist-get attr-plist :date)
+                                                        :mod-date (plist-get attr-plist :mod-date)
+                                                        :tags (plist-get attr-plist :tags)
+                                                        :category (plist-get attr-plist :category))))
+                   (run-hook-with-args 'ego-post-publish-hooks attr-plist)
+                   (push attr-plist changed-attr-plists)))
+               upd-list)
+              ;; Build file-attr-list from cache + changes for category/rss/index
+              (let ((all-attr-plists (mapcar
+                                      (lambda (entry)
+                                        (append (list :source-file (car entry)
+                                                      :uri (cadr entry))
+                                                (cddr entry)))
+                                      db-entries)))
+                ;; Replace old entries with updated ones, or append new entries
+                (mapc
+                 (lambda (new-plist)
+                   (let* ((src (plist-get new-plist :source-file))
+                          (pos (cl-position src all-attr-plists
+                                            :test (lambda (s p) (equal s (plist-get p :source-file))))))
+                     (if pos
+                         (setcar (nthcdr pos all-attr-plists) new-plist)
+                       (push new-plist all-attr-plists))))
+                 changed-attr-plists)
+                (setq file-attr-list all-attr-plists))
+              ;; Update category index, RSS, default index using full attr list
+              (unless (member
+                       (expand-file-name "index.org" repo-dir)
+                       files-list)
+                (ego--generate-default-index file-attr-list pub-root-dir))
+              (when (and (ego--get-config-option :about)
+                         (not (member
+                               (expand-file-name "about.org" repo-dir)
+                               files-list)))
+                (ego--generate-default-about pub-root-dir))
+              (ego--update-category-index file-attr-list pub-root-dir)
+              (when (ego--get-config-option :rss)
+                (ego--update-rss file-attr-list pub-root-dir))
+              ;; Incremental summary update
+              (let ((affected-tags (ego--compute-affected-tags db-entries changed-attr-plists del-list)))
+                (when affected-tags
+                  (let ((updated-cache (ego--get-tag-cache-from-db)))
+                    (mapc
+                     (lambda (name)
+                       (let ((summary-name (if (equal name (caar (-filter (lambda (e) (equal :tags (cadr e)))
+                                                                         (ego--get-config-option :summary))))
+                                               "tags"
+                                             name)))
+                         ;; Sort each tag's post list by date
+                         (mapc
+                          (lambda (summary-list)
+                            (setcdr
+                             summary-list
+                             (sort (cdr summary-list)
+                                   (lambda (p1 p2)
+                                     (<= (ego--compare-standard-date
+                                          (ego--fix-timestamp-string (plist-get p1 :date))
+                                          (ego--fix-timestamp-string (plist-get p2 :date)))
+                                         0)))))
+                          updated-cache)
+                         ;; Sort tags alphabetically
+                         (setq updated-cache
+                               (sort updated-cache
+                                     (lambda (a b) (string< (car a) (car b)))))
+                         (ego--update-summary-incremental updated-cache affected-tags pub-root-dir summary-name)))
+                     (mapcar #'car (ego--get-config-option :summary))))))))))
+
+       ;; Full rebuild path (force-all)
+       (t
+        (setq file-attr-list
+              (reverse (mapcar
+                        (lambda (org-file)
+                          (message "EGO DEBUG: org-file=[%s]" org-file)
+                          (let* ((need-upd-p (member org-file upd-list)))
+                            (let* ((attr-cell (ego--get-org-file-options
+                                               org-file
+                                               pub-root-dir
+                                               need-upd-p))
+                                   (attr-plist (car attr-cell))
+                                   (component-table (cdr attr-cell)))
+                              (when need-upd-p
+                                (run-hook-with-args 'ego-pre-publish-hooks attr-plist)
+                                (let ((new-html-uri (ego--publish-modified-file component-table
+                                                                                  (plist-get attr-plist :pub-dir))))
+                                  (ego-update-org-html-mapping org-file new-html-uri 'del
+                                                               (list :title (plist-get attr-plist :title)
+                                                                     :date (plist-get attr-plist :date)
+                                                                     :mod-date (plist-get attr-plist :mod-date)
+                                                                     :tags (plist-get attr-plist :tags)
+                                                                     :category (plist-get attr-plist :category))))
+                                (run-hook-with-args 'ego-post-publish-hooks attr-plist))
+                              attr-plist)))
+                        files-list)))
+        (unless (member
+                 (expand-file-name "index.org" repo-dir)
+                 files-list)
+          (ego--generate-default-index file-attr-list pub-root-dir))
+        (when (and (ego--get-config-option :about)
+                   (not (member
+                         (expand-file-name "about.org" repo-dir)
+                         files-list)))
+          (ego--generate-default-about pub-root-dir))
+        (ego--update-category-index file-attr-list pub-root-dir)
+        (when (ego--get-config-option :rss)
+          (ego--update-rss file-attr-list pub-root-dir))
+        (mapc
+         (lambda (name)
            (ego--update-summary file-attr-list pub-root-dir name))
-       (mapcar #'car (ego--get-config-option :summary))))))
+         (mapcar #'car (ego--get-config-option :summary)))))))))
 
 (defun ego--generate-description ()
   "Generate description of current org file buffer."
@@ -547,6 +689,209 @@ is the root publication directory."
 (defun ego--generate-summary-uri (summary-name summary-item-name)
   "Generate summary uri based on `summary-name' and `summary-item-name'."
   (concat "/" summary-name "/" (ego--encode-string-to-url summary-item-name)))
+
+(defun ego--get-tag-cache-from-db ()
+  "Build tag->posts alist from .ego.db cache.
+Returns nil if cache is unavailable or incomplete (missing :tags in any entry).
+Each entry in the returned alist is (tag-name attr-plist1 attr-plist2 ...)."
+  (let ((db-entries (ego-get-org-html-mapping))
+        summary-alist)
+    (when db-entries
+      (catch 'invalid
+        (mapc
+         (lambda (entry)
+           (let* ((org-path (car entry))
+                  (html-uri (cadr entry))
+                  (metadata (cddr entry))
+                  (tags (plist-get metadata :tags)))
+             (unless tags
+               (message "EGO: Entry %s missing :tags in cache, will rebuild" org-path)
+               (throw 'invalid nil))
+             (let ((attr-plist (append (list :source-file org-path
+                                             :uri html-uri)
+                                       metadata)))
+               (mapc
+                (lambda (tag-name)
+                  (let ((summary-list (assoc tag-name summary-alist)))
+                    (unless summary-list
+                      (add-to-list 'summary-alist (setq summary-list (list tag-name))))
+                    (nconc summary-list (list attr-plist))))
+                tags))))
+         db-entries)
+        summary-alist))))
+
+(defun ego--compute-affected-tags (db-entries changed-attr-plists deleted-files)
+  "Compute tags whose pages need re-rendering.
+DB-ENTRIES is the alist from ego-get-org-html-mapping.
+CHANGED-ATTR-PLISTS is a list of new attr-plists for updated files.
+DELETED-FILES is a list of org file paths that were deleted.
+Returns a list of tag name strings, or t meaning all tags are affected."
+  (let (affected-tags)
+    ;; Process changed files: compare old vs new tags/title/date
+    (mapc
+     (lambda (new-plist)
+       (let* ((org-path (plist-get new-plist :source-file))
+              (old-entry (assoc org-path db-entries))
+              (old-metadata (when old-entry (cddr old-entry)))
+              (old-tags (when old-metadata (plist-get old-metadata :tags)))
+              (new-tags (plist-get new-plist :tags)))
+         ;; Add all old and new tags as affected
+         (setq affected-tags (append old-tags new-tags affected-tags))))
+     changed-attr-plists)
+    ;; Process deleted files: their tags need page updates
+    (mapc
+     (lambda (org-path)
+       (let* ((old-entry (assoc org-path db-entries))
+              (old-metadata (when old-entry (cddr old-entry)))
+              (old-tags (when old-metadata (plist-get old-metadata :tags))))
+         (setq affected-tags (append old-tags affected-tags))))
+     deleted-files)
+    (delete-dups affected-tags)))
+
+(defun ego--update-summary-incremental (summary-alist affected-tags pub-base-dir summary-name)
+  "Re-render only affected tag pages.
+SUMMARY-ALIST is the full tag->posts alist (built from cache + updates).
+AFFECTED-TAGS is the list of tag names whose pages need regeneration.
+PUB-BASE-DIR is the root publication directory.
+SUMMARY-NAME is the summary type name (typically \"tags\")."
+  (let* ((summary-base-dir (expand-file-name
+                            (concat summary-name "/")
+                            pub-base-dir))
+         (summary-update-number (car (cddr (cdr (assoc summary-name (ego--get-config-option :summary))))))
+         summary-dir)
+    ;; Filter summary-alist to only affected tags
+    (let ((filtered-alist (cl-remove-if-not
+                           (lambda (entry) (member (car entry) affected-tags))
+                           summary-alist)))
+      ;; Re-render tag index page (shows all tags with counts, needs update when tags change)
+      (ego--save-to-file
+       (mustache-render
+        (ego--get-cache-create
+         :container-template
+         (message "EGO: Read container.mustache from file")
+         (ego--file-to-string (ego--get-template-file "container.mustache")))
+        (ht ("header"
+             (ego--render-header
+              (ht ("page-title" (concat (capitalize summary-name)
+                                        " Index - "
+                                        (ego--get-config-option :site-main-title)))
+                  ("author" (or user-full-name "Unknown Author")))))
+            ("nav" (ego--render-navigation-bar))
+            ("content"
+             (ego--render-content
+              "summary-index.mustache"
+              (ht ("summary-name" (capitalize summary-name))
+                  ("updates-p" (numberp summary-update-number))
+                  ("updates"
+                   (when (numberp summary-update-number)
+                     (mapcar
+                      (lambda (attr-plist)
+                        (let ((tags-multi (mapcar
+                                           (lambda (tag-name)
+                                             (ht ("link" (ego--generate-summary-uri "tags" tag-name))
+                                                 ("name" tag-name)))
+                                           (plist-get attr-plist :tags))))
+                          (ht ("post-uri" (plist-get attr-plist :uri))
+                              ("post-title" (plist-get attr-plist :title))
+                              ("post-date" (plist-get attr-plist :mod-date))
+                              ("tag-links" (if (not tags-multi) "N/A"
+                                             (mapconcat
+                                              (lambda (tag)
+                                                (mustache-render
+                                                 "<a href=\"{{link}}\">{{name}}</a>" tag))
+                                              tags-multi " : "))))))
+                      (-uniq (-take
+                              summary-update-number
+                              (sort (cl-do ((k summary-alist (cdr k))
+                                         (result-k nil (append (cdr (car k)) result-k)))
+                                    ((equal k nil) result-k))
+                                  (lambda (plist1 plist2)
+                                    (< (ego--compare-standard-date
+                                        (ego--fix-timestamp-string
+                                         (plist-get plist1 :mod-date))
+                                        (ego--fix-timestamp-string
+                                         (plist-get plist2 :mod-date)))
+                                       0))))))))
+                  ("summary"
+                   (mapcar
+                    (lambda (summary-list)
+                      (ht ("summary-item-name" (car summary-list))
+                          ("summary-item-uri" (ego--generate-summary-uri summary-name (car summary-list)))
+                          ("count" (number-to-string (length (cdr summary-list))))))
+                    summary-alist)))))
+            ("footer"
+             (ego--render-footer
+              (ht ("show-meta" nil)
+                  ("show-comment" nil)
+                  ("author" (or user-full-name "Unknown Author"))
+                  ("google-analytics" (ego--get-config-option :personal-google-analytics-id))
+                  ("google-analytics-id" (ego--get-config-option :personal-google-analytics-id))
+                  ("creator-info" (ego--get-html-creator-string))
+                  ("email" (ego--confound-email-address (or user-mail-address
+                                                            "Unknown Email"))))))))
+       (concat summary-base-dir "index.html"))
+      ;; Re-render individual tag pages for affected tags only
+      (mapc
+       (lambda (summary-list)
+         (setq summary-dir (file-name-as-directory
+                            (concat summary-base-dir
+                                    (ego--encode-string-to-url (car summary-list)))))
+         (unless (file-directory-p summary-dir)
+           (mkdir summary-dir t))
+         (ego--save-to-file
+          (mustache-render
+           (ego--get-cache-create
+            :container-template
+            (message "EGO: Read container.mustache from file")
+            (ego--file-to-string (ego--get-template-file "container.mustache")))
+           (ht ("header"
+                (ego--render-header
+                 (ht ("page-title" (concat (capitalize summary-name) ": " (car summary-list)
+                                           " - " (ego--get-config-option :site-main-title)))
+                     ("author" "ego"))))
+               ("nav" (ego--render-navigation-bar))
+               ("content"
+                (ego--render-content
+                 "summary.mustache"
+                 (ht ("summary-name" (capitalize summary-name))
+                     ("summary-item-name" (car summary-list))
+                     ("summary"
+                      (mapcar
+                       (lambda (sl)
+                         (ht ("summary-item-name" (car sl))
+                             ("summary-item-uri" (ego--generate-summary-uri summary-name (car sl)))
+                             ("count" (number-to-string (length (cdr sl))))))
+                       summary-alist))
+                     ("posts"
+                      (mapcar
+                       (lambda (attr-plist)
+                         (let ((tags-multi (mapcar
+                                            (lambda (tag-name)
+                                              (ht ("link" (ego--generate-summary-uri "tags" tag-name))
+                                                  ("name" tag-name)))
+                                            (plist-get attr-plist :tags))))
+                           (ht ("post-uri" (plist-get attr-plist :uri))
+                               ("post-title" (plist-get attr-plist :title))
+                               ("post-date" (plist-get attr-plist :date))
+                               ("tag-links" (if (not tags-multi) "N/A"
+                                              (mapconcat
+                                               (lambda (tag)
+                                                 (mustache-render
+                                                  "<a href=\"{{link}}\">{{name}}</a>" tag))
+                                               tags-multi " : "))))))
+                       (cdr summary-list))))))
+               ("footer"
+                (ego--render-footer
+                 (ht ("show-meta" nil)
+                     ("show-comment" nil)
+                     ("author" (or user-full-name "Unknown Author"))
+                     ("google-analytics" (ego--get-config-option :personal-google-analytics-id))
+                     ("google-analytics-id" (ego--get-config-option :personal-google-analytics-id))
+                     ("creator-info" (ego--get-html-creator-string))
+                     ("email" (ego--confound-email-address (or user-mail-address
+                                                               "Unknown Email"))))))))
+          (concat summary-dir "index.html")))
+       filtered-alist))))
 
 (defun ego--update-summary (file-attr-list pub-base-dir summary-name)
   "Update summary pages which name is `summary-name', FILE-ATTR-LIST
