@@ -270,7 +270,7 @@ M-x ego-do-publication
   mess up the files in the repository. So, close all opened directories
   in the repository before =ego-do-publication= .
 
-* Roadmap [8/9]
+* Roadmap [9/9]
 
 
    - [X] 不保存上一次发布的项目 
@@ -278,7 +278,7 @@ M-x ego-do-publication
    - [X] 发布前先git pull同步一次上游仓库 
    - [X] 去掉Emacs中的静态web服务 
    - [X] 根据修改的内容增量更新tag文件 
-   - [ ] 尝试用vc库代替git 
+   - [X] 尝试用vc库代替git 
    - [X] gitalk替换评论系统 
    - [X] 实现delete org file处理
    - [X] repo-dir切换到org branch前先用stash保存未提交内容，切回原branch后再unstash，这要比直接commit好

@@ -52,25 +52,24 @@ command to be executed."
     (shell-command command t nil)
     (buffer-substring (region-beginning) (region-end))))
 
-(defun ego--git-command (dir args)
-  "Execute git command with specified `ARGS' in `DIR'"
+(defun ego--vc-git-command (dir &rest args)
+  "Execute git command with ARGS in DIR, return output as string.
+Uses `vc-do-command' instead of shell-command for better cross-platform
+compatibility and argument safety (no shell escaping needed)."
   (ego--verify-git-repository dir)
-  (let* ((git-args (if (stringp args)
-                       args
-                     (string-join args " ")))
-         (command (concat "git " git-args)))
-    ;; (message "%s" command)
-    (ego--shell-command dir command t)))
+  (with-temp-buffer
+    (let ((default-directory (file-name-as-directory dir))
+          (process-environment (cons "LC_ALL=C" process-environment)))
+      (apply #'vc-do-command (current-buffer) 0 "git" nil args)
+      (buffer-string))))
 
 (defun ego-git-get-all-files (repo-dir &optional branch)
   "This function will return a list contains all org files in git repository
 presented by REPO-DIR, if optional BRANCH is offered, will check that branch
 instead of pointer HEAD."
-  (let ((output (ego--shell-command
-                 repo-dir
-                 (concat "env LC_ALL=C git ls-tree -r --name-only "
-                         (or branch "HEAD"))
-                 t)))
+  (let ((output (apply #'ego--vc-git-command
+                       repo-dir "ls-tree" "-r" "--name-only"
+                       (list (or branch "HEAD")))))
     (delq nil (mapcar #'(lambda (line)
                           (when (string-suffix-p ".org" line t)
                             (expand-file-name line repo-dir)))
@@ -79,10 +78,8 @@ instead of pointer HEAD."
 (defun ego-git-get-ignored-files (repo-dir)
   "This function will return a list of ignored org files in git repository
 presented by REPO-DIR."
-  (let ((output (ego--shell-command
-                 repo-dir
-                 (concat "env LC_ALL=C git ls-files --others --ignored --exclude-standard --directory")
-                 t)))
+  (let ((output (ego--vc-git-command repo-dir "ls-files" "--others" "--ignored"
+                                     "--exclude-standard" "--directory")))
     (delq nil (mapcar #'(lambda (line)
                           (when (string-suffix-p ".org" line t)
                             (expand-file-name line repo-dir)))
@@ -111,10 +108,7 @@ If there is no branch named BRANCH-NAME, It will create an empty brranch"
   "This function will create a new empty branch with BRANCH-NAME, and checkout it. "
   (let* ((repo-dir (file-name-as-directory repo-dir))
          (default-directory repo-dir)
-         (output (ego--shell-command
-                  repo-dir
-                  (concat "env LC_ALL=C git checkout -b " branch-name)
-                  t)))
+         (output (ego--vc-git-command repo-dir "checkout" "-b" branch-name)))
     (unless (or (string-match "Switched to a new branch" output) (string-match "already exists" output))
       (error "Fatal: Failed to create a new branch with name '%s'."
              branch-name))
@@ -169,11 +163,8 @@ only two types will work well: need to publish or need to delete.
 <TODO>: robust enhance, branch check, etc.未来考虑拆分新增和修改的情况,还有重命名的情况"
   (let ((org-file-ext ".org")
         (repo-dir (file-name-as-directory repo-dir))
-        (output (ego--shell-command
-                 repo-dir
-                 (concat "env LC_ALL=C git diff --name-status "
-                         base-commit " HEAD")
-                 t))
+        (output (ego--vc-git-command repo-dir "diff" "--name-status"
+                                     base-commit "HEAD"))
         upd-list del-list)
     (message "output=%s" output)
     (mapc (lambda (line)
@@ -200,10 +191,8 @@ only two types will work well: need to publish or need to delete.
 presented by REPO-DIR, FILEPATH is the path of target file, can be absolute or
 relative."
   (let ((repo-dir (file-name-as-directory repo-dir))
-        (output (ego--shell-command
-                 repo-dir
-                 (concat "env LC_ALL=C git log -1 --format=\"%ci\" -- \"" filepath "\"")
-                 t)))
+        (output (ego--vc-git-command repo-dir "log" "-1" "--format=%ci"
+                                     "--" filepath)))
     (when (string-match "\\`\\([0-9]+-[0-9]+-[0-9]+\\) .*\n\\'" output)
       (match-string 1 output))))
 
@@ -212,10 +201,8 @@ relative."
 presented by REPO-DIR, FILEPATH is the path of target file, can be absolute or
 relative."
   (let ((repo-dir (file-name-as-directory repo-dir))
-        (output (ego--shell-command
-                 repo-dir
-                 (concat "env LC_ALL=C git log --reverse --format=\"%ci\" -- \"" filepath "\"|head -1")
-                 t)))
+        (output (ego--vc-git-command repo-dir "log" "--reverse" "--max-count=1"
+                                     "--format=%ci" "--" filepath)))
     (when (string-match "\\`\\([0-9]+-[0-9]+-[0-9]+\\) .*\n\\'" output)
       (match-string 1 output))))
 
@@ -223,10 +210,7 @@ relative."
   "This function will return all remote repository names of git repository
 presented by REPO-DIR, return nil if there is no remote repository."
   (let* ((repo-dir (file-name-as-directory repo-dir))
-         (output (ego--shell-command
-                  repo-dir
-                  "env LC_ALL=C git remote"
-                  t)))
+         (output (ego--vc-git-command repo-dir "remote")))
     (delete "" (split-string output "\n"))))
 
 (defun ego-git-select-a-remote (repo-dir)
