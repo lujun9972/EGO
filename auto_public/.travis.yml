@@ -1,0 +1,26 @@
+language: minimal
+install:
+  - sudo apt-get install emacs
+  - git clone  -b master https://github.com/lujun9972/lujun9972.github.com ~/web
+  - git clone  https://github.com/lujun9972/EGO.el ~/EGO
+script:
+  - emacs --script=./auto_publish.el
+
+branches:
+  only:
+    - source
+  except:
+    - master
+git:
+  submodules: false
+  depth: false
+deploy:
+  provider: pages
+  keep_history: true
+  skip_cleanup: true
+  github_token: $GITHUB_TOKEN
+  local_dir: ~/web
+  target_branch: master
+  on:
+    branch:
+      - source
