@@ -352,9 +352,9 @@ responsibility to guarantee the two parameters are valid."
          (html-branch (or html-branch
                           (ego--get-config-option :repository-html-branch)
                           "master"))
-         (publish-time (string-trim (ego--vc-git-command store-dir
+         (publish-time (string-trim (ego--vc-command store-dir
                                                          "log" "-n" "1" "--pretty=%cd" html-branch)))
-         (commits-after-publish (string-trim (ego--vc-git-command repo-dir
+         (commits-after-publish (string-trim (ego--vc-command repo-dir
                                                                    "log" "--pretty=%H"
                                                                    (format "--since=%s" publish-time)
                                                                    org-branch)))
@@ -374,9 +374,9 @@ responsibility to guarantee the two parameters are valid."
          (html-branch (or html-branch
                           (ego--get-config-option :repository-html-branch)
                           "master"))
-         (publish-time (string-trim (ego--vc-git-command store-dir
+         (publish-time (string-trim (ego--vc-command store-dir
                                                          "log" "-n" "1" "--pretty=%cd" html-branch)))
-         (first-commit-before-publish (string-trim (ego--vc-git-command repo-dir
+         (first-commit-before-publish (string-trim (ego--vc-command repo-dir
                                                                          "log" "-n" "1" "--pretty=%H"
                                                                          (format "--until=%s" publish-time)
                                                                          org-branch))))
