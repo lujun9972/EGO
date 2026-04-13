@@ -352,10 +352,12 @@ responsibility to guarantee the two parameters are valid."
          (html-branch (or html-branch
                           (ego--get-config-option :repository-html-branch)
                           "master"))
-         (publish-time (string-trim (ego--git-command store-dir
-                                                      (concat "log -n 1 --pretty='%cd' " html-branch))))
-         (commits-after-publish (string-trim (ego--git-command repo-dir
-                                                               (format "log --pretty='%%H' --since '%s' %s" publish-time org-branch))))
+         (publish-time (string-trim (ego--vc-git-command store-dir
+                                                         "log" "-n" "1" "--pretty=%cd" html-branch)))
+         (commits-after-publish (string-trim (ego--vc-git-command repo-dir
+                                                                   "log" "--pretty=%H"
+                                                                   (format "--since=%s" publish-time)
+                                                                   org-branch)))
          (commits-after-publish (split-string commits-after-publish))
          (first-commit-after-publish (car (last commits-after-publish))))
     (if (string-blank-p first-commit-after-publish)
@@ -372,10 +374,12 @@ responsibility to guarantee the two parameters are valid."
          (html-branch (or html-branch
                           (ego--get-config-option :repository-html-branch)
                           "master"))
-         (publish-time (string-trim (ego--git-command store-dir
-                                                      (concat "log -n 1 --pretty='%cd' " html-branch))))
-         (first-commit-before-publish (string-trim (ego--git-command repo-dir
-                                                               (format "log -n 1 --pretty='%%H' --until '%s' %s" publish-time org-branch)))))
+         (publish-time (string-trim (ego--vc-git-command store-dir
+                                                         "log" "-n" "1" "--pretty=%cd" html-branch)))
+         (first-commit-before-publish (string-trim (ego--vc-git-command repo-dir
+                                                                         "log" "-n" "1" "--pretty=%H"
+                                                                         (format "--until=%s" publish-time)
+                                                                         org-branch))))
     (if (string-blank-p first-commit-before-publish)
         nil
       first-commit-before-publish)))
