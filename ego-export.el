@@ -690,6 +690,19 @@ is the root publication directory."
   "Generate summary uri based on `summary-name' and `summary-item-name'."
   (concat "/" summary-name "/" (ego--encode-string-to-url summary-item-name)))
 
+(defun ego--get-summary-template (summary-name index-p)
+  "Return the best matching template name for summary pages.
+Tries SUMMARY-NAME-specific template (e.g. \"author.mustache\" for
+\"authors\"), then falls back to generic \"summary.mustache\".
+If INDEX-P is non-nil, look for index page template variant."
+  (let* ((singular (string-trim-right summary-name "s"))
+         (suffix (if index-p "-index.mustache" ".mustache")))
+    (or (cl-some
+         (lambda (name)
+           (when (ego--get-template-file name) name))
+         (list (concat singular suffix)
+               (concat "summary" suffix))))))
+
 (defun ego--get-tag-cache-from-db ()
   "Build tag->posts alist from .ego.db cache.
 Returns nil if cache is unavailable or incomplete (missing :tags in any entry).
@@ -779,7 +792,7 @@ SUMMARY-NAME is the summary type name (typically \"tags\")."
             ("nav" (ego--render-navigation-bar))
             ("content"
              (ego--render-content
-              "summary-index.mustache"
+              (ego--get-summary-template summary-name t)
               (ht ("summary-name" (capitalize summary-name))
                   ("updates-p" (numberp summary-update-number))
                   ("updates"
@@ -852,7 +865,7 @@ SUMMARY-NAME is the summary type name (typically \"tags\")."
                ("nav" (ego--render-navigation-bar))
                ("content"
                 (ego--render-content
-                 "summary.mustache"
+                 (ego--get-summary-template summary-name nil)
                  (ht ("summary-name" (capitalize summary-name))
                      ("summary-item-name" (car summary-list))
                      ("summary"
@@ -959,7 +972,7 @@ TODO: improve this function."
           ("nav" (ego--render-navigation-bar))
           ("content"
            (ego--render-content
-            "summary-index.mustache"
+            (ego--get-summary-template summary-name t)
             (ht ("summary-name" (capitalize summary-name))
                 ("updates-p" (numberp summary-update-number))
                 ("updates"
@@ -1037,7 +1050,7 @@ TODO: improve this function."
              ("nav" (ego--render-navigation-bar))
              ("content"
               (ego--render-content
-               "summary.mustache"
+               (ego--get-summary-template summary-name nil)
                (ht ("summary-name" (capitalize summary-name))
                    ("summary-item-name" (car summary-list))
                    ("summary"
